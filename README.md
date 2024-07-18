@@ -50,12 +50,14 @@ Način na koji je šema restrukturirana nakon donetih odluka u vezi optimizacije
 
 ### Upiti
 U sklopu realizacije projekta, cilj je odgovoriti na narednih 10 pitanja: 
-1. Prikazati prosečne cene pri otvaranju i zatvaranju prodaje akcija po kvartalima za kompaniju Apple od datuma izlistavanja kompanije na berzi. - [Rešenje](Initial-Schema/Milos/Query1/README.md)
-2. U akcije koje kompanije se trebalo ulagati 1. juna 2010. godine kako bi se postigao najveći ROI na datum 24. maj 2024. godine. - [Rešenje](Initial-Schema/Milos/Query1/README.md)
-3. Za svaki sektor prikazati po jednu kompaniju koja je imala najveći skok cena akcija od početka 2024. pa do dana poslednjeg uzorkovanja. - [Rešenje](Initial-Schema/Milos/Query1/README.md)
-4. Predstavi prosečan volume po danu u odnosu na sve akcije u poređenju sa S&P 500 indeksom tokom januara 2019. godine. - [Rešenje](Initial-Schema/Milos/Query1/README.md)
-5. Izračunati koliki skok vrednosti cena akcija su imale kompanije tokom 2024. godine i zatim top 30 kompanija razvrstati prema industrijama, i predstaviti broj kompanija po industriji. - [Rešenje](Initial-Schema/Milos/Query1/README.md)
+1. Prikazati prosečne cene pri otvaranju i zatvaranju prodaje akcija po kvartalima za kompaniju Apple od datuma izlistavanja kompanije na berzi. - [Rešenje](upit_1/README.md)
+2. U akcije koje kompanije se trebalo ulagati 1. juna 2010. godine kako bi se postigao najveći ROI na datum 24. maj 2024. godine. - [Rešenje](upit_2/README.md)
+3. Za svaki sektor prikazati po jednu kompaniju koja je imala najveći skok cena akcija od početka 2024. pa do dana poslednjeg uzorkovanja. - [Rešenje](upit_3/README.md)
+4. Predstavi prosečan volume po danu u odnosu na sve akcije u poređenju sa S&P 500 indeksom tokom januara 2019. godine. - [Rešenje](upit_4/README.md)
+5. Izračunati koliki skok vrednosti cena akcija su imale kompanije tokom 2024. godine i zatim top 30 kompanija razvrstati prema industrijama, i predstaviti broj kompanija po industriji. - [Rešenje](upit_5/README.md)
 
+### Grafik uporednih rezultata
+![uporedni_grafik](uporedni_grafik.png)
 
-**Napomena:** Za izradu grafika se koristio Metabase.
+**Napomena:** Za izradu svih grafika je korišćen Metabase.
 

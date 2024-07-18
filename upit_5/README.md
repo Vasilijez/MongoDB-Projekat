@@ -107,17 +107,21 @@ db.sp500_companies.aggregate([
     }
 ])
 ```
+### Primer rezultata upita
+![rezultat_upita](rezultat_upita.png)
+
+### Grafik upita br. 5
+![grafik](grafik.png)
 
 ## Vreme izvršavanja upita br. 5 pre optimizacije
-### Primer rezultata upita:
-![rezultat_upita](rezultat_upita.png)
+
 ![vreme_izvrsavanja_pre_optimizacije](vreme_izvrsavanja_pre_optimizacije.png)
 
 Koristiće se šablon proširene reference, već je odlučeno da se određenja polja iz kolekcije companies prebace u kolekciju stocks, marketcap je sigurno jedno od najvažnijih polja stoga će se i ono prebaciti.
 
 Biće poboljšan primarno restruktuiranjem kolekcije stocks.
 
-## Izvršavanje upita br. 5 nakon izmene šeme:
+## Izvršavanje upita br. 5 nakon izmene šeme
 ```
 db.merged_stocks.aggregate([
     {

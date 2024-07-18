@@ -1,0 +1,15 @@
+
+// Upit 1 - indeksi
+db.merged_stocks.createIndex({"symbol": 1, "shortname":1})   
+
+// Upit 2 - indeksi
+db.companies_stock_stats.createIndex({ listingDate: 1, state: 1 });  
+
+// Upit 3 - indeksi
+// Losije rezultate sa indeksom dobijem
+
+// Upit 4 - indeksi
+// Losije rezultate sa indeksom dobijem
+
+// Upit 5 - indeksi
+db.merged_stocks.createIndex({"date":1})    

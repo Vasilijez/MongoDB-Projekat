@@ -1,0 +1,669 @@
+// 1.
+db.sp500_stocks.aggregate([
+    {
+        $match: {
+            "Symbol": {$in: ["AAPL", "GOOGL", "ORCL", "PYPL", "NVDA", "UBER", "NFLX", "UBER", "PYPL", "TSLA"]},
+            "Open": { $ne: null }
+        }
+    },
+    {
+        $lookup: {
+            from: "sp500_companies", 
+            localField: "Symbol",
+            foreignField: "Symbol",   
+            as: "company_details"    
+        }
+    },
+    {
+      $unwind: "$company_details"  
+    },
+    {
+        $project: {
+            year: { $year: "$Date" },
+            quarter: { $ceil: { $divide: [{ $month: "$Date" }, 3] } },
+            Open: 1,
+            Close: 1,
+            shortname: "$company_details.Shortname"
+        }
+    },
+    {
+        $group: {
+            _id: {
+                year: "$year",
+                quarter: "$quarter",
+                shortname: "$shortname",
+            },
+            averageOpen: { $avg: "$Open" },
+            averageClose: { $avg: "$Close" }
+        }
+    },
+    {
+        $project: {
+            _id: 0,
+            year: "$_id.year",
+            quarter: "$_id.quarter",
+            shortName: "$_id.shortname",
+            averageOpen: { $round: ["$averageOpen", 2] },
+            averageClose: { $round: ["$averageClose", 2] },
+        }
+    },
+    {
+        $sort: {
+            "year": 1,
+            "quarter": 1
+        }
+    },
+])
+
+// 1. nakon optimizacije
+db.merged_stocks.aggregate([
+    {
+        $match: {
+            "symbol": {$in: ["AAPL", "GOOGL", "ORCL", "PYPL", "NVDA", "UBER", "NFLX", "UBER", "PYPL", "TSLA"]}
+        }
+    },
+    {
+        $project: {
+            year: { $year: "$date" },
+            quarter: { $ceil: { $divide: [{ $month: "$date" }, 3] } },
+            open: 1,
+            close: 1,
+            shortname: 1
+        }
+    },
+    {
+        $group: {
+            _id: {
+                year: "$year",
+                quarter: "$quarter",
+                shortname: "$shortname",
+            },
+            averageOpen: { $avg: "$open" },
+            averageClose: { $avg: "$close" }
+        }
+    },
+    {
+        $project: {
+            _id: 0,
+            year: "$_id.year",
+            quarter: "$_id.quarter",
+            shortname: "$_id.shortname",
+            averageOpen: { $round: ["$averageOpen", 2] },
+            averageClose: { $round: ["$averageClose", 2] },
+        }
+    },
+    {
+        $sort: {
+            "year": 1,
+            "quarter": 1
+        }
+    },
+])
+
+
+
+
+
+// 2.
+db.sp500_stocks.aggregate([
+    {
+        "$match": {
+            "Adj Close": {
+                "$ne": null
+            }
+        }
+    },
+    {
+        "$sort": {
+            "Symbol": 1,
+            "Date": 1
+        }
+    },
+    {
+        "$group": {
+            "_id": "$Symbol",
+            "firstClose": { "$first": "$Adj Close" },
+            "firstDate": { "$first": "$Date" }, 
+            "lastClose": { "$last": "$Adj Close" }
+        }
+    },
+    {
+        "$match": {
+            "$expr": {
+                "$eq": [
+                    "$firstDate",
+                    {
+                        "$dateFromString": {
+                            "dateString": "2010-01-04T00:00Z"
+                        }
+                    }
+                ]
+            }
+        }
+    },
+    {
+        "$lookup": {
+            "from": "sp500_companies",
+            "localField": "_id",
+            "foreignField": "Symbol",
+            "as": "company_info"
+        }
+    },
+    {
+        "$unwind": "$company_info"
+    },
+    {
+        "$match": {
+            "company_info.State": { "$ne": null }
+        }
+    },
+    {
+        "$project": {
+            "State": "$company_info.State", 
+            "ROI": { 
+                "$round": [
+                    {
+                        "$multiply": [
+                            {
+                                "$divide": [
+                                    { "$subtract": ["$lastClose", "$firstClose"] },
+                                    "$firstClose"
+                                ]
+                            },
+                            100
+                        ]
+                    }, 2
+                ]
+            },
+        }
+    },
+    {
+        "$group": {
+            "_id": "$State",
+            "AverageROI": { "$avg": "$ROI" }
+        }
+    },
+    {
+        "$project": {
+            "_id": 0,
+            "State": "$_id",
+            "AverageROI": 1
+        }
+    }
+]);
+
+
+// 2. nakon rekonstruisanja optimizacije
+db.companies_stock_stats.aggregate([
+    {
+        "$match": {
+          "$and": [
+            {
+              "$expr": {
+                "$eq": [
+                  "$listingDate",
+                  {
+                    "$dateFromString": {
+                      "dateString": "2010-01-04T00:00Z"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "state": {
+                "$ne": null
+              }
+            }
+          ]
+        }
+    },
+    {
+        $project: {
+            "State": "$state",
+            "firstClose": "$listingAdjustedClose",
+            "lastClose": "$currentAdjustedClose",
+            "ROI": {
+                "$round": [
+                    {
+                        "$multiply": [
+                            {
+                                "$divide": [
+                                    { "$subtract": ["$currentAdjustedClose", "$listingAdjustedClose"] },
+                                    "$listingAdjustedClose"
+                                ]
+                            },
+                            100
+                        ]
+                    },
+                    2
+                ]
+            }
+        }
+    },
+    {
+        $group: {
+            "_id": "$State",
+            "AverageROI": { "$avg": "$ROI" }
+        }
+    },
+    {
+        $project: {
+            "_id": 0,
+            "State": "$_id",
+            "AverageROI": 1
+        }
+    },
+    {
+        $sort: {
+            "AverageROI": -1
+        }
+    }
+]);
+
+
+
+
+// 3.
+db.sp500_stocks.aggregate([
+    {
+        "$match": {
+            "Adj Close": {
+                        "$ne": null
+            }
+        }
+    },
+    {
+        $lookup: {
+            from: "sp500_companies",
+            localField: "Symbol",
+            foreignField: "Symbol",
+            as: "company_details"
+        }
+    },
+    {
+        $unwind: "$company_details"
+    },
+    {
+        $group: {
+            _id: "$Symbol",
+            Sector: { $first: "$company_details.Sector" },
+            minPrice: { $min: "$Adj Close" },
+            maxPrice: { $max: "$Adj Close" }
+        }
+    },
+    {
+        $project: {
+            Symbol: "$_id",
+            Sector: 1,
+            PriceJump: { $subtract: ["$maxPrice", "$minPrice"] }
+        }
+    },
+    {
+        $sort: { "PriceJump": -1 }
+    },
+    {
+        $group: {
+            _id: "$Sector",
+            Company: { $first: "$Symbol" },
+            MaxPriceJump: { $first: "$PriceJump" }
+        }
+    },
+    {
+        $project: {
+            _id: 0,
+            Sector: "$_id",
+            Company: 1,
+            MaxPriceJump: 1
+        }
+    }
+])
+
+// 3. nakon optimizacije
+db.companies_stock_stats.aggregate([
+    {
+        $project: {
+            symbol: 1,
+            sector: 1,
+            PriceJump: { $subtract: ["$allTimeHigh", "$allTimeLow"] }
+        }
+    },
+    {
+        $sort: { "PriceJump": -1 }
+    },
+    {
+        $group: {
+            _id: "$sector",
+            Company: { $first: "$symbol" },
+            MaxPriceJump: { $first: "$PriceJump" }
+        }
+    },
+    {
+        $project: {
+            _id: 0,
+            Sector: "$_id",
+            Company: 1,
+            MaxPriceJump: 1
+        }
+    }
+]);
+
+
+
+// 4.
+db.sp500_stocks.aggregate([
+    {
+        "$match": {
+          "$and": [
+            {
+              "$expr": {
+                "$gte": [
+                  "$Date",
+                  {
+                    "$dateFromString": {
+                      "dateString": "2014-05-27T00:00Z"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "Open": {
+                "$ne": null
+              }
+            }
+          ]
+        }
+    },
+    {
+        $group: {
+            _id: {
+                day: { $dayOfMonth: "$Date" },
+                month: { $month: "$Date" },
+                year: { $year: "$Date" }
+            },
+            CloseOpenPriceDifference: {
+                $sum: {
+                    $subtract: ["$Close", "$Open"]
+                }
+            },
+            AvgVolume: {
+                $avg: "$Volume"
+            },
+            AvgAdjClose: {
+                $avg: "$Adj Close"
+            }
+        }
+    },
+    {
+        $lookup: {
+            from: "sp500_index",
+            let: { day: "$_id.day", month: "$_id.month", year: "$_id.year" },
+            pipeline: [
+                {
+                    $match: {
+                        $expr: {
+                            $and: [
+                                { $eq: [{ $dayOfMonth: "$Date" }, "$$day"] },
+                                { $eq: [{ $month: "$Date" }, "$$month"] },
+                                { $eq: [{ $year: "$Date" }, "$$year"] }
+                            ]
+                        }
+                    }
+                },
+                {
+                    $project: {
+                        _id: 0,
+                        SAndP500: "$S&P500"
+                    }
+                }
+            ],
+            as: "indexData"
+        }
+    },
+    {
+        $unwind: {
+            path: "$indexData",
+            preserveNullAndEmptyArrays: true 
+        }
+    },
+    {
+        $project: {
+            _id: 0,
+            day: "$_id.day",
+            month: "$_id.month",
+            year: "$_id.year",
+            closeOpenPriceDifference: { $round: ["$CloseOpenPriceDifference", 2] },
+            avgVolume: { $round: ["$AvgVolume", 2] },
+            avgAdjClose: { $round: ["$AvgAdjClose", 2] },
+            sAndP500: "$indexData.SAndP500"
+        }
+    },
+    {
+        $sort: { "year": -1, "month": 1, "day": 1 }
+    }
+])
+
+// 4. nakon optimizacije
+db.merged_stocks.aggregate([
+    {
+        "$match": {
+          "$expr": {
+            "$gte": [
+              "$date",
+              {
+                "$dateFromString": {
+                  "dateString": "2014-05-27T00:00Z"
+                }
+              }
+            ]
+          }
+        }
+    },
+    {
+        $group: {
+            _id: {
+                day: { $dayOfMonth: "$date" },
+                month: { $month: "$date" },
+                year: { $year: "$date" }
+            },
+            CloseOpenPriceDifference: {
+                $sum: {
+                    $subtract: ["$close", "$open"]
+                }
+            },
+            AvgVolume: {
+                $avg: "$volume"
+            },
+            AvgAdjClose: {
+                $avg: "$adjClose"
+            },
+            IndexValue: { $first: "$indexValue" } 
+        }
+    },
+    {
+        $project: {
+            _id: 0,
+            day: "$_id.day",
+            month: "$_id.month",
+            year: "$_id.year",
+            closeOpenPriceDifference: { $round: ["$CloseOpenPriceDifference", 2] },
+            avgVolume: { $round: ["$AvgVolume", 2] },
+            avgAdjClose: { $round: ["$AvgAdjClose", 2] },
+            sAndP500: "$IndexValue"  
+        }
+    },
+    {
+        $sort: { "year": -1, "month": 1, "day": 1 }
+    }
+])
+
+
+// 5.
+db.sp500_companies.aggregate([
+    {
+        $facet: {
+            "topMarketCap": [
+                { $sort: { "Marketcap": -1 } },
+                { $limit: 100 },
+                { $project: { Symbol: 1, Shortname: 1, marketCapRank: { $literal: "Top 100" } } }
+            ],
+            "bottomMarketCap": [
+                { $sort: { "Marketcap": 1 } },
+                { $limit: 100 }, 
+                { $project: { Symbol: 1, Shortname: 1, marketCapRank: { $literal: "Bottom 100" } } }
+            ]
+        }
+    },
+    {
+        $project: {
+            combined: { $concatArrays: ["$topMarketCap", "$bottomMarketCap"] }
+        }
+    },
+    {
+        $unwind: "$combined"
+    },
+    {
+        $replaceRoot: { newRoot: "$combined" }
+    },
+    {
+        $lookup: {
+            from: "sp500_stocks",
+            let: { symbol: "$Symbol" },
+            pipeline: [
+                {
+                    $match: {
+                        $expr: {
+                            $and: [
+                                {
+                                    $gte: [
+                                        "$Date",
+                                        {
+                                            $dateFromString: {
+                                                dateString: "2024-01-01T00:00Z"
+                                            }
+                                        }
+                                    ]
+                                },
+                                {
+                                    $lte: [
+                                        "$Date",
+                                        {
+                                            $dateFromString: {
+                                                dateString: "2024-05-24T23:59Z"
+                                            }
+                                        }
+                                    ]
+                                },
+                                {
+                                    $eq: [
+                                        "$Symbol",
+                                        "$$symbol"
+                                    ]
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    $group: {
+                        _id: null,
+                        firstPrice: { $first: "$Close" },
+                        lastPrice: { $last: "$Close" },
+                        positiveDays: { $sum: { $cond: [{ $gt: ["$Close", "$Open"] }, 1, 0] } }
+                    }
+                },
+                {
+                    $project: {
+                        priceJump: { $subtract: ["$lastPrice", "$firstPrice"] },
+                        positiveDays: "$positiveDays",
+                        _id: 0 
+                    }
+                }
+            ],
+            as: "stockPerformance"
+        }
+    },
+    {
+        $unwind: {
+            path: "$stockPerformance",
+            preserveNullAndEmptyArrays: true
+        }
+    },
+    {
+        $addFields: {
+            "priceJump": { $round: ["$stockPerformance.priceJump", 2] },
+            "positiveDays": "$stockPerformance.positiveDays"
+        }
+    },
+    {
+        $project: {
+            stockPerformance: 0,
+            _id: 0
+        }
+    }
+])
+
+
+// 5. nakon restruktuiranja seme
+db.merged_stocks.aggregate([
+    {
+        $match: {
+            $expr: {
+                
+                     $gte: ["$date", new Date("2024-01-01T00:00Z")] 
+               
+            }
+        }
+    },
+    {
+        $group: {
+            _id: "$symbol",
+            firstPrice: { $first: "$close" },
+            lastPrice: { $last: "$close" },
+            positiveDays: { $sum: { $cond: [{ $gt: ["$close", "$open"] }, 1, 0] } },
+            latestMarketCap: { $last: "$marketcap" },
+            shortName: { $last: "$shortname" }
+        }
+    },
+    {
+        $addFields: {
+            priceJump: { $subtract: ["$lastPrice", "$firstPrice"] }
+        }
+    },
+    {
+        $facet: {
+            "top100": [
+                { $sort: { "latestMarketCap": -1 } },
+                { $limit: 100 },
+                { $addFields: { marketCapRank: "Top 100" } }
+            ],
+            "bottom100": [
+                { $sort: { "latestMarketCap": 1 } },
+                { $limit: 100 },
+                { $addFields: { marketCapRank: "Bottom 100" } }
+            ]
+        }
+    },
+    {
+        $project: {
+            combined: { $concatArrays: ["$top100", "$bottom100"] }
+        }
+    },
+    {
+        $unwind: "$combined"
+    },
+    {
+        $replaceRoot: { newRoot: "$combined" }
+    },
+    {
+        $project: {
+            _id: 0,
+            symbol: "$_id",
+            shortName: 1,
+            priceJump: { $round: ["$priceJump", 2] },
+            positiveDays: 1,
+            marketCapRank: 1
+        }
+    }
+]);

@@ -60,7 +60,7 @@ db.sp500_stocks.aggregate([
 ])
 ```
 
-### Primer rezultata upita:
+### Primer rezultata upita
 ![rezultat_upita](rezultat_upita.png)
 
 ### Grafik upita br. 1 - Average close
@@ -78,7 +78,7 @@ Kolekciju companies proširiti poljem kada je kompanija po prvi put izlistana na
 Glavni problem upita je što se izvrašava etapa lookup, najbolje rešenje je da se iz kolekcije kompanija polje shortName prebaci u stocks, jer se došlo do zaključka da se naknadnim korišćenjem samo indeksa nad poljem symbol iz kolekcije companies ne bi značajnije dobilo na performansama, što je i očekivano, jer je kolekcija companies svakako mala. Upotrebom samo indeksa, lookup se smanji na svega 2,5 s (~3x). 
 Biće poboljšan primarno restruktuiranjem kolekcije stocks.
 
-## Izvršavanje upita br. 1 nakon izmene šeme:
+## Izvršavanje upita br. 1 nakon izmene šeme
 ```
 db.merged_stocks.aggregate([
     {

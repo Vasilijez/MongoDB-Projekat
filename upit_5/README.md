@@ -1,128 +1,192 @@
-# Upit 1 - Prikazati prosečne cene pri otvaranju i zatvaranju prodaje akcija po kvartalima za kompaniju Apple od datuma izlistavanja kompanije na berzi.
+# Upit 5 - Izračunati koliki skok vrednosti cena akcija su imale kompanije tokom 2024. godine i zatim top 30 kompanija razvrstati prema industrijama, i predstaviti broj kompanija po industriji.
 
 ## Izvršavanje upita
 
 ```
-db.sp500_stocks.aggregate([
+db.sp500_companies.aggregate([
     {
-        $match: {
-            "Symbol": {$in: ["AAPL", "GOOGL", "ORCL", "PYPL", "NVDA", "UBER", "NFLX", "UBER", "PYPL", "TSLA"]},
-            "Open": { $ne: null }
+        $facet: {
+            "topMarketCap": [
+                { $sort: { "Marketcap": -1 } },
+                { $limit: 100 },
+                { $project: { Symbol: 1, Shortname: 1, marketCapRank: { $literal: "Top 100" } } }
+            ],
+            "bottomMarketCap": [
+                { $sort: { "Marketcap": 1 } },
+                { $limit: 100 }, 
+                { $project: { Symbol: 1, Shortname: 1, marketCapRank: { $literal: "Bottom 100" } } }
+            ]
         }
+    },
+    {
+        $project: {
+            combined: { $concatArrays: ["$topMarketCap", "$bottomMarketCap"] }
+        }
+    },
+    {
+        $unwind: "$combined"
+    },
+    {
+        $replaceRoot: { newRoot: "$combined" }
     },
     {
         $lookup: {
-            from: "sp500_companies", 
-            localField: "Symbol",
-            foreignField: "Symbol",   
-            as: "company_details"    
+            from: "sp500_stocks",
+            let: { symbol: "$Symbol" },
+            pipeline: [
+                {
+                    $match: {
+                        $expr: {
+                            $and: [
+                                {
+                                    $gte: [
+                                        "$Date",
+                                        {
+                                            $dateFromString: {
+                                                dateString: "2024-01-01T00:00Z"
+                                            }
+                                        }
+                                    ]
+                                },
+                                {
+                                    $lte: [
+                                        "$Date",
+                                        {
+                                            $dateFromString: {
+                                                dateString: "2024-05-24T23:59Z"
+                                            }
+                                        }
+                                    ]
+                                },
+                                {
+                                    $eq: [
+                                        "$Symbol",
+                                        "$$symbol"
+                                    ]
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    $group: {
+                        _id: null,
+                        firstPrice: { $first: "$Close" },
+                        lastPrice: { $last: "$Close" },
+                        positiveDays: { $sum: { $cond: [{ $gt: ["$Close", "$Open"] }, 1, 0] } }
+                    }
+                },
+                {
+                    $project: {
+                        priceJump: { $subtract: ["$lastPrice", "$firstPrice"] },
+                        positiveDays: "$positiveDays",
+                        _id: 0 
+                    }
+                }
+            ],
+            as: "stockPerformance"
         }
     },
     {
-      $unwind: "$company_details"  
+        $unwind: {
+            path: "$stockPerformance",
+            preserveNullAndEmptyArrays: true
+        }
+    },
+    {
+        $addFields: {
+            "priceJump": { $round: ["$stockPerformance.priceJump", 2] },
+            "positiveDays": "$stockPerformance.positiveDays"
+        }
     },
     {
         $project: {
-            year: { $year: "$Date" },
-            quarter: { $ceil: { $divide: [{ $month: "$Date" }, 3] } },
-            Open: 1,
-            Close: 1,
-            shortname: "$company_details.Shortname"
+            stockPerformance: 0,
+            _id: 0
         }
-    },
-    {
-        $group: {
-            _id: {
-                year: "$year",
-                quarter: "$quarter",
-                shortname: "$shortname",
-            },
-            averageOpen: { $avg: "$Open" },
-            averageClose: { $avg: "$Close" }
-        }
-    },
-    {
-        $project: {
-            _id: 0,
-            year: "$_id.year",
-            quarter: "$_id.quarter",
-            shortName: "$_id.shortname",
-            averageOpen: { $round: ["$averageOpen", 2] },
-            averageClose: { $round: ["$averageClose", 2] },
-        }
-    },
-    {
-        $sort: {
-            "year": 1,
-            "quarter": 1
-        }
-    },
+    }
 ])
 ```
 
-## Vreme izvršavanja upita br. 1 pre optimizacije
+## Vreme izvršavanja upita br. 5 pre optimizacije
 ### Primer rezultata upita:
 ![rezultat_upita](rezultat_upita.png)
-
-Kolekciju companies proširiti poljem kada je kompanija po prvi put izlistana na berzi. Imaće značajnog uticaja na većinu upita, jer je to vrlo bitan podatak, od koga dosta zavisi određivanje strategije izvršavanja upita, a i performanse posledično. Takođe ideja je da se pri restruktuiranju odbace svi dokumenti sa null vrednostima za cene akcija, jer je zaključak da su beskorisni.
-
 ![vreme_izvrsavanja_pre_optimizacije](vreme_izvrsavanja_pre_optimizacije.png)
 
-Glavni problem upita je što se izvrašava etapa lookup, najbolje rešenje je da se iz kolekcije kompanija polje shortName prebaci u stocks, jer se došlo do zaključka da se naknadnim korišćenjem samo indeksa nad poljem symbol iz kolekcije companies ne bi značajnije dobilo na performansama, što je i očekivano, jer je kolekcija companies svakako mala. Upotrebom samo indeksa, lookup se smanji na svega 2,5 s (~3x). 
+Koristiće se šablon proširene reference, već je odlučeno da se određenja polja iz kolekcije companies prebace u kolekciju stocks, marketcap je sigurno jedno od najvažnijih polja stoga će se i ono prebaciti.
+
 Biće poboljšan primarno restruktuiranjem kolekcije stocks.
 
-## Izvršavanje upita br. 1 nakon izmene šeme:
+## Izvršavanje upita br. 5 nakon izmene šeme:
 ```
 db.merged_stocks.aggregate([
     {
         $match: {
-            "symbol": {$in: ["AAPL", "GOOGL", "ORCL", "PYPL", "NVDA", "UBER", "NFLX", "UBER", "PYPL", "TSLA"]}
-        }
-    },
-    {
-        $project: {
-            year: { $year: "$date" },
-            quarter: { $ceil: { $divide: [{ $month: "$date" }, 3] } },
-            open: 1,
-            close: 1,
-            shortname: 1
+            $expr: {
+                
+                     $gte: ["$date", new Date("2024-01-01T00:00Z")] 
+               
+            }
         }
     },
     {
         $group: {
-            _id: {
-                year: "$year",
-                quarter: "$quarter",
-                shortname: "$shortname",
-            },
-            averageOpen: { $avg: "$open" },
-            averageClose: { $avg: "$close" }
+            _id: "$symbol",
+            firstPrice: { $first: "$close" },
+            lastPrice: { $last: "$close" },
+            positiveDays: { $sum: { $cond: [{ $gt: ["$close", "$open"] }, 1, 0] } },
+            latestMarketCap: { $last: "$marketcap" },
+            shortName: { $last: "$shortname" }
+        }
+    },
+    {
+        $addFields: {
+            priceJump: { $subtract: ["$lastPrice", "$firstPrice"] }
+        }
+    },
+    {
+        $facet: {
+            "top100": [
+                { $sort: { "latestMarketCap": -1 } },
+                { $limit: 100 },
+                { $addFields: { marketCapRank: "Top 100" } }
+            ],
+            "bottom100": [
+                { $sort: { "latestMarketCap": 1 } },
+                { $limit: 100 },
+                { $addFields: { marketCapRank: "Bottom 100" } }
+            ]
         }
     },
     {
         $project: {
-            _id: 0,
-            year: "$_id.year",
-            quarter: "$_id.quarter",
-            shortname: "$_id.shortname",
-            averageOpen: { $round: ["$averageOpen", 2] },
-            averageClose: { $round: ["$averageClose", 2] },
+            combined: { $concatArrays: ["$top100", "$bottom100"] }
         }
     },
     {
-        $sort: {
-            "year": 1,
-            "quarter": 1
-        }
+        $unwind: "$combined"
     },
-])
+    {
+        $replaceRoot: { newRoot: "$combined" }
+    },
+    {
+        $project: {
+            _id: 0,
+            symbol: "$_id",
+            shortName: 1,
+            priceJump: { $round: ["$priceJump", 2] },
+            positiveDays: 1,
+            marketCapRank: 1
+        }
+    }
+]);
 ```
-## Vreme izvršavanja upita br. 1 pre upotrebe indeksa i nakon izmene šeme
-![vreme_izvrsavanja_uz_izmenu_seme](vreme_izvrsavanja_uz_izmenu_seme.png)
-
+## Vreme izvršavanja upita br. 5 pre upotrebe indeksa i nakon izmene šeme
 Poboljšan primarno restruktuiranjem kolekcije stocks.
 
-## Vreme izvršavanja upita br. 1 nakon upotrebe indeksa i nakon izmene šeme
+![vreme_izvrsavanja_uz_izmenu_seme](vreme_izvrsavanja_uz_izmenu_seme.png)
+
+## Vreme izvršavanja upita br. 5 nakon upotrebe indeksa i nakon izmene šeme
 ![vreme_izvrsavanja_uz_izmenu_seme_i_kreiranja_indeksa](vreme_izvrsavanja_uz_izmenu_seme_i_kreiranja_indeksa.png)
 
-Upotrebljen je indeks nad obeležjem symbol kolekcije stocks. Ako se napravi kompozitni indeks symbol+shortname dobije se isto ubrzanje uz veći broj korišćenja samog indeksa tokom izvršavanja upita.
+Sa dodavanjem indeksa nad poljem date vreme se skrati, razlog za to je sužavanja skupa dokumenata značajno zbog prirode uslova.

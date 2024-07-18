@@ -1,128 +1,170 @@
-# Upit 1 - Prikazati prosečne cene pri otvaranju i zatvaranju prodaje akcija po kvartalima za kompaniju Apple od datuma izlistavanja kompanije na berzi.
+# Upit 4 - Predstavi prosečan volume po danu u odnosu na sve akcije u poređenju sa S&P 500 indeksom tokom januara 2019. godine.
 
 ## Izvršavanje upita
 
 ```
 db.sp500_stocks.aggregate([
     {
-        $match: {
-            "Symbol": {$in: ["AAPL", "GOOGL", "ORCL", "PYPL", "NVDA", "UBER", "NFLX", "UBER", "PYPL", "TSLA"]},
-            "Open": { $ne: null }
+        "$match": {
+          "$and": [
+            {
+              "$expr": {
+                "$gte": [
+                  "$Date",
+                  {
+                    "$dateFromString": {
+                      "dateString": "2014-05-27T00:00Z"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "Open": {
+                "$ne": null
+              }
+            }
+          ]
+        }
+    },
+    {
+        $group: {
+            _id: {
+                day: { $dayOfMonth: "$Date" },
+                month: { $month: "$Date" },
+                year: { $year: "$Date" }
+            },
+            CloseOpenPriceDifference: {
+                $sum: {
+                    $subtract: ["$Close", "$Open"]
+                }
+            },
+            AvgVolume: {
+                $avg: "$Volume"
+            },
+            AvgAdjClose: {
+                $avg: "$Adj Close"
+            }
         }
     },
     {
         $lookup: {
-            from: "sp500_companies", 
-            localField: "Symbol",
-            foreignField: "Symbol",   
-            as: "company_details"    
+            from: "sp500_index",
+            let: { day: "$_id.day", month: "$_id.month", year: "$_id.year" },
+            pipeline: [
+                {
+                    $match: {
+                        $expr: {
+                            $and: [
+                                { $eq: [{ $dayOfMonth: "$Date" }, "$$day"] },
+                                { $eq: [{ $month: "$Date" }, "$$month"] },
+                                { $eq: [{ $year: "$Date" }, "$$year"] }
+                            ]
+                        }
+                    }
+                },
+                {
+                    $project: {
+                        _id: 0,
+                        SAndP500: "$S&P500"
+                    }
+                }
+            ],
+            as: "indexData"
         }
     },
     {
-      $unwind: "$company_details"  
-    },
-    {
-        $project: {
-            year: { $year: "$Date" },
-            quarter: { $ceil: { $divide: [{ $month: "$Date" }, 3] } },
-            Open: 1,
-            Close: 1,
-            shortname: "$company_details.Shortname"
-        }
-    },
-    {
-        $group: {
-            _id: {
-                year: "$year",
-                quarter: "$quarter",
-                shortname: "$shortname",
-            },
-            averageOpen: { $avg: "$Open" },
-            averageClose: { $avg: "$Close" }
+        $unwind: {
+            path: "$indexData",
+            preserveNullAndEmptyArrays: true 
         }
     },
     {
         $project: {
             _id: 0,
+            day: "$_id.day",
+            month: "$_id.month",
             year: "$_id.year",
-            quarter: "$_id.quarter",
-            shortName: "$_id.shortname",
-            averageOpen: { $round: ["$averageOpen", 2] },
-            averageClose: { $round: ["$averageClose", 2] },
+            closeOpenPriceDifference: { $round: ["$CloseOpenPriceDifference", 2] },
+            avgVolume: { $round: ["$AvgVolume", 2] },
+            avgAdjClose: { $round: ["$AvgAdjClose", 2] },
+            sAndP500: "$indexData.SAndP500"
         }
     },
     {
-        $sort: {
-            "year": 1,
-            "quarter": 1
-        }
-    },
+        $sort: { "year": -1, "month": 1, "day": 1 }
+    }
 ])
 ```
 
-## Vreme izvršavanja upita br. 1 pre optimizacije
+## Vreme izvršavanja upita br. 4 pre optimizacije
 ### Primer rezultata upita:
 ![rezultat_upita](rezultat_upita.png)
-
-Kolekciju companies proširiti poljem kada je kompanija po prvi put izlistana na berzi. Imaće značajnog uticaja na većinu upita, jer je to vrlo bitan podatak, od koga dosta zavisi određivanje strategije izvršavanja upita, a i performanse posledično. Takođe ideja je da se pri restruktuiranju odbace svi dokumenti sa null vrednostima za cene akcija, jer je zaključak da su beskorisni.
-
 ![vreme_izvrsavanja_pre_optimizacije](vreme_izvrsavanja_pre_optimizacije.png)
 
-Glavni problem upita je što se izvrašava etapa lookup, najbolje rešenje je da se iz kolekcije kompanija polje shortName prebaci u stocks, jer se došlo do zaključka da se naknadnim korišćenjem samo indeksa nad poljem symbol iz kolekcije companies ne bi značajnije dobilo na performansama, što je i očekivano, jer je kolekcija companies svakako mala. Upotrebom samo indeksa, lookup se smanji na svega 2,5 s (~3x). 
+Kao što se može videti najviše vremena odlazi na lookup i na scan. Uvođenje indeksa nad poljem date u kolekciji stocks će rešiti taj problem, dok će uvođenje šablona proširene reference rešiti problem predugog izvršavanja lookup-a. Vrednosti S&P 500 indeksa se se koriste za mnoštvo upita koji se izvršavaju nad kolekcijom stocks, takođe se vrednosti ne menjaju, uz to kolekcija index poseduje svega dva polja, date i S&P500, stoga je logičan izbor da se vrednosti S&P 500 indeksa prebaci u kolekciju stocks. Ovde bi se možda mogao primeniti šablon polimorfizma, tako što bi za svaki dan imali poseban dokument sa grupom vrednosti akcija na taj dan i izračunatim karakterističnim vrednostima. 
+
 Biće poboljšan primarno restruktuiranjem kolekcije stocks.
 
-## Izvršavanje upita br. 1 nakon izmene šeme:
+## Izvršavanje upita br. 4 nakon izmene šeme:
 ```
 db.merged_stocks.aggregate([
     {
-        $match: {
-            "symbol": {$in: ["AAPL", "GOOGL", "ORCL", "PYPL", "NVDA", "UBER", "NFLX", "UBER", "PYPL", "TSLA"]}
-        }
-    },
-    {
-        $project: {
-            year: { $year: "$date" },
-            quarter: { $ceil: { $divide: [{ $month: "$date" }, 3] } },
-            open: 1,
-            close: 1,
-            shortname: 1
+        "$match": {
+          "$expr": {
+            "$gte": [
+              "$date",
+              {
+                "$dateFromString": {
+                  "dateString": "2014-05-27T00:00Z"
+                }
+              }
+            ]
+          }
         }
     },
     {
         $group: {
             _id: {
-                year: "$year",
-                quarter: "$quarter",
-                shortname: "$shortname",
+                day: { $dayOfMonth: "$date" },
+                month: { $month: "$date" },
+                year: { $year: "$date" }
             },
-            averageOpen: { $avg: "$open" },
-            averageClose: { $avg: "$close" }
+            CloseOpenPriceDifference: {
+                $sum: {
+                    $subtract: ["$close", "$open"]
+                }
+            },
+            AvgVolume: {
+                $avg: "$volume"
+            },
+            AvgAdjClose: {
+                $avg: "$adjClose"
+            },
+            IndexValue: { $first: "$indexValue" } 
         }
     },
     {
         $project: {
             _id: 0,
+            day: "$_id.day",
+            month: "$_id.month",
             year: "$_id.year",
-            quarter: "$_id.quarter",
-            shortname: "$_id.shortname",
-            averageOpen: { $round: ["$averageOpen", 2] },
-            averageClose: { $round: ["$averageClose", 2] },
+            closeOpenPriceDifference: { $round: ["$CloseOpenPriceDifference", 2] },
+            avgVolume: { $round: ["$AvgVolume", 2] },
+            avgAdjClose: { $round: ["$AvgAdjClose", 2] },
+            sAndP500: "$IndexValue"  
         }
     },
     {
-        $sort: {
-            "year": 1,
-            "quarter": 1
-        }
-    },
+        $sort: { "year": -1, "month": 1, "day": 1 }
+    }
 ])
 ```
-## Vreme izvršavanja upita br. 1 pre upotrebe indeksa i nakon izmene šeme
-![vreme_izvrsavanja_uz_izmenu_seme](vreme_izvrsavanja_uz_izmenu_seme.png)
-
+## Vreme izvršavanja upita br. 4 pre upotrebe indeksa i nakon izmene šeme
 Poboljšan primarno restruktuiranjem kolekcije stocks.
 
-## Vreme izvršavanja upita br. 1 nakon upotrebe indeksa i nakon izmene šeme
-![vreme_izvrsavanja_uz_izmenu_seme_i_kreiranja_indeksa](vreme_izvrsavanja_uz_izmenu_seme_i_kreiranja_indeksa.png)
+![vreme_izvrsavanja_uz_izmenu_seme](vreme_izvrsavanja_uz_izmenu_seme.png)
 
-Upotrebljen je indeks nad obeležjem symbol kolekcije stocks. Ako se napravi kompozitni indeks symbol+shortname dobije se isto ubrzanje uz veći broj korišćenja samog indeksa tokom izvršavanja upita.
+## Vreme izvršavanja upita br. 4 nakon upotrebe indeksa i nakon izmene šeme
+Sa dodavanjem indeksa nad poljem date vreme se pogorša (ode na 5 s), većina dokumenata zadovoljava uslov u match etapi, pa indeks stoga ne dođe do izražaja.¬ Ako se u match etapi na osnovu uslova suzi skup dokumenata, indeks se itekako isplati.

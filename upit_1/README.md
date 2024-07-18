@@ -64,6 +64,12 @@ db.sp500_stocks.aggregate([
 ### Primer rezultata upita:
 ![rezultat_upita](rezultat_upita.png)
 
+### Grafik upita br. 1 - Average close
+![grafik_1_average_close](grafik_1_average_close.png)
+
+### Grafik upita br. 1 - Average open
+![grafik_2_average_open](grafik_2_average_open.png)
+
 Kolekciju companies proširiti poljem kada je kompanija po prvi put izlistana na berzi. Imaće značajnog uticaja na većinu upita, jer je to vrlo bitan podatak, od koga dosta zavisi određivanje strategije izvršavanja upita, a i performanse posledično. Takođe ideja je da se pri restruktuiranju odbace svi dokumenti sa null vrednostima za cene akcija, jer je zaključak da su beskorisni.
 
 ![vreme_izvrsavanja_pre_optimizacije](vreme_izvrsavanja_pre_optimizacije.png)

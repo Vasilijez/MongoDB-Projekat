@@ -1,128 +1,176 @@
-# Upit 1 - Prikazati prosečne cene pri otvaranju i zatvaranju prodaje akcija po kvartalima za kompaniju Apple od datuma izlistavanja kompanije na berzi.
+# Upit 2 - U akcije koje kompanije se trebalo ulagati 1. juna 2010. godine kako bi se postigao najveći ROI na datum 24. maj 2024. godine.
 
 ## Izvršavanje upita
 
 ```
 db.sp500_stocks.aggregate([
     {
-        $match: {
-            "Symbol": {$in: ["AAPL", "GOOGL", "ORCL", "PYPL", "NVDA", "UBER", "NFLX", "UBER", "PYPL", "TSLA"]},
-            "Open": { $ne: null }
+        "$match": {
+            "Adj Close": {
+                "$ne": null
+            }
         }
     },
     {
-        $lookup: {
-            from: "sp500_companies", 
-            localField: "Symbol",
-            foreignField: "Symbol",   
-            as: "company_details"    
+        "$sort": {
+            "Symbol": 1,
+            "Date": 1
         }
     },
     {
-      $unwind: "$company_details"  
-    },
-    {
-        $project: {
-            year: { $year: "$Date" },
-            quarter: { $ceil: { $divide: [{ $month: "$Date" }, 3] } },
-            Open: 1,
-            Close: 1,
-            shortname: "$company_details.Shortname"
+        "$group": {
+            "_id": "$Symbol",
+            "firstClose": { "$first": "$Adj Close" },
+            "firstDate": { "$first": "$Date" }, 
+            "lastClose": { "$last": "$Adj Close" }
         }
     },
     {
-        $group: {
-            _id: {
-                year: "$year",
-                quarter: "$quarter",
-                shortname: "$shortname",
+        "$match": {
+            "$expr": {
+                "$eq": [
+                    "$firstDate",
+                    {
+                        "$dateFromString": {
+                            "dateString": "2010-01-04T00:00Z"
+                        }
+                    }
+                ]
+            }
+        }
+    },
+    {
+        "$lookup": {
+            "from": "sp500_companies",
+            "localField": "_id",
+            "foreignField": "Symbol",
+            "as": "company_info"
+        }
+    },
+    {
+        "$unwind": "$company_info"
+    },
+    {
+        "$match": {
+            "company_info.State": { "$ne": null }
+        }
+    },
+    {
+        "$project": {
+            "State": "$company_info.State", 
+            "ROI": { 
+                "$round": [
+                    {
+                        "$multiply": [
+                            {
+                                "$divide": [
+                                    { "$subtract": ["$lastClose", "$firstClose"] },
+                                    "$firstClose"
+                                ]
+                            },
+                            100
+                        ]
+                    }, 2
+                ]
             },
-            averageOpen: { $avg: "$Open" },
-            averageClose: { $avg: "$Close" }
         }
     },
     {
-        $project: {
-            _id: 0,
-            year: "$_id.year",
-            quarter: "$_id.quarter",
-            shortName: "$_id.shortname",
-            averageOpen: { $round: ["$averageOpen", 2] },
-            averageClose: { $round: ["$averageClose", 2] },
+        "$group": {
+            "_id": "$State",
+            "AverageROI": { "$avg": "$ROI" }
         }
     },
     {
-        $sort: {
-            "year": 1,
-            "quarter": 1
+        "$project": {
+            "_id": 0,
+            "State": "$_id",
+            "AverageROI": 1
         }
-    },
-])
+    }
+]);
 ```
 
-## Vreme izvršavanja upita br. 1 pre optimizacije
+## Vreme izvršavanja upita br. 2 pre optimizacije
 ### Primer rezultata upita:
 ![rezultat_upita](rezultat_upita.png)
-
-Kolekciju companies proširiti poljem kada je kompanija po prvi put izlistana na berzi. Imaće značajnog uticaja na većinu upita, jer je to vrlo bitan podatak, od koga dosta zavisi određivanje strategije izvršavanja upita, a i performanse posledično. Takođe ideja je da se pri restruktuiranju odbace svi dokumenti sa null vrednostima za cene akcija, jer je zaključak da su beskorisni.
-
 ![vreme_izvrsavanja_pre_optimizacije](vreme_izvrsavanja_pre_optimizacije.png)
 
-Glavni problem upita je što se izvrašava etapa lookup, najbolje rešenje je da se iz kolekcije kompanija polje shortName prebaci u stocks, jer se došlo do zaključka da se naknadnim korišćenjem samo indeksa nad poljem symbol iz kolekcije companies ne bi značajnije dobilo na performansama, što je i očekivano, jer je kolekcija companies svakako mala. Upotrebom samo indeksa, lookup se smanji na svega 2,5 s (~3x). 
-Biće poboljšan primarno restruktuiranjem kolekcije stocks.
+Problem predugačkog izvršavanja etape scan će biti rešen upotrebom indeksa nad poljem date za koje će se ispostaviti da i u drugim upitima izaziva pad performansi, što je pozitivno, jer se jednim indeksom ubrzava grupa upita. Treba napomenuti da postoji još argumenata za uvođenjem indeksa nad tim poljem, priroda podataka je takva da se operacije modifikacije neće izvršavati, operacije brisanja još manje, a operacije upisa retko uz to je indeks nad date prilično selektivan. Drugi zastoj u performansama kod etape sort nastaje usled nepostojanja indeksa nad symbol i date (rastući poredak), stoga prvi zastoj i drugi zastoj bi se rešio upotrebom kompozitnog indeksa, pri čemu se pazi na strukturu tako da se može koristiti sem ovog i u drugim upitima. Bila je ideja takođe i da po defaultu budu sortirani dokumenti kao što i jesu tako importovani, ali MongoDB ne podržava sortiranost. Nažalost, indeksi su uspeli smanjiti vreme na svega 2s (~2x). Stoga je zaključak da se primeni drugačiji pristup. Odlučeno je da se kreira kolekcija companies_stock_stats u kojoj će se nalaziti simbol kompanije, datum izlistavanja na berzi, datum poslednjeg uzorkovanja cena akcija, različite vrednosti cene akcija za ta dva datuma, kao i minimalna i maksimalna vrednost cene akcija ikada.
+Biće poboljšan primarno kreiranjem nove kolekcije.
 
-## Izvršavanje upita br. 1 nakon izmene šeme:
+## Izvršavanje upita br. 2 nakon izmene šeme:
 ```
-db.merged_stocks.aggregate([
+db.companies_stock_stats.aggregate([
     {
-        $match: {
-            "symbol": {$in: ["AAPL", "GOOGL", "ORCL", "PYPL", "NVDA", "UBER", "NFLX", "UBER", "PYPL", "TSLA"]}
+        "$match": {
+          "$and": [
+            {
+              "$expr": {
+                "$eq": [
+                  "$listingDate",
+                  {
+                    "$dateFromString": {
+                      "dateString": "2010-01-04T00:00Z"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "state": {
+                "$ne": null
+              }
+            }
+          ]
         }
     },
     {
         $project: {
-            year: { $year: "$date" },
-            quarter: { $ceil: { $divide: [{ $month: "$date" }, 3] } },
-            open: 1,
-            close: 1,
-            shortname: 1
+            "State": "$state",
+            "firstClose": "$listingAdjustedClose",
+            "lastClose": "$currentAdjustedClose",
+            "ROI": {
+                "$round": [
+                    {
+                        "$multiply": [
+                            {
+                                "$divide": [
+                                    { "$subtract": ["$currentAdjustedClose", "$listingAdjustedClose"] },
+                                    "$listingAdjustedClose"
+                                ]
+                            },
+                            100
+                        ]
+                    },
+                    2
+                ]
+            }
         }
     },
     {
         $group: {
-            _id: {
-                year: "$year",
-                quarter: "$quarter",
-                shortname: "$shortname",
-            },
-            averageOpen: { $avg: "$open" },
-            averageClose: { $avg: "$close" }
+            "_id": "$State",
+            "AverageROI": { "$avg": "$ROI" }
         }
     },
     {
         $project: {
-            _id: 0,
-            year: "$_id.year",
-            quarter: "$_id.quarter",
-            shortname: "$_id.shortname",
-            averageOpen: { $round: ["$averageOpen", 2] },
-            averageClose: { $round: ["$averageClose", 2] },
+            "_id": 0,
+            "State": "$_id",
+            "AverageROI": 1
         }
     },
     {
         $sort: {
-            "year": 1,
-            "quarter": 1
+            "AverageROI": -1
         }
-    },
-])
+    }
+]);
 ```
-## Vreme izvršavanja upita br. 1 pre upotrebe indeksa i nakon izmene šeme
+## Vreme izvršavanja upita br. 2 pre upotrebe indeksa i nakon izmene šeme
+Poboljšan primarno kreiranjem nove kolekcije.
 ![vreme_izvrsavanja_uz_izmenu_seme](vreme_izvrsavanja_uz_izmenu_seme.png)
 
-Poboljšan primarno restruktuiranjem kolekcije stocks.
-
-## Vreme izvršavanja upita br. 1 nakon upotrebe indeksa i nakon izmene šeme
-![vreme_izvrsavanja_uz_izmenu_seme_i_kreiranja_indeksa](vreme_izvrsavanja_uz_izmenu_seme_i_kreiranja_indeksa.png)
-
-Upotrebljen je indeks nad obeležjem symbol kolekcije stocks. Ako se napravi kompozitni indeks symbol+shortname dobije se isto ubrzanje uz veći broj korišćenja samog indeksa tokom izvršavanja upita.
+## Vreme izvršavanja upita br. 2 nakon upotrebe indeksa i nakon izmene šeme
+Nema potrebe za indeksom, dobija se par milisekundi duže izvršavanje sa indeksom.

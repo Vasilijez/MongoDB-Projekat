@@ -57,17 +57,21 @@ db.sp500_stocks.aggregate([
     }
 ])
 ```
+### Primer rezultata upita
+![rezultat_upita](rezultat_upita.png)
+
+### Grafik upita br. 3
+![grafik](grafik.png)
 
 ## Vreme izvršavanja upita br. 3 pre optimizacije
-### Primer rezultata upita:
-![rezultat_upita](rezultat_upita.png)
+
 ![vreme_izvrsavanja_pre_optimizacije](vreme_izvrsavanja_pre_optimizacije.png)
 
 Lookup kao etapa ne postoji nakon optimizacije već se čitava logika ovog upita obavlja o novonastaloj kolekciji companies_stock_stats.  
 
 Biće poboljšan primarno kreiranjem nove kolekcije.
 
-## Izvršavanje upita br. 3 nakon izmene šeme:
+## Izvršavanje upita br. 3 nakon izmene šeme
 ```
 db.companies_stock_stats.aggregate([
     {

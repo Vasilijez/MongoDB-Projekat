@@ -96,17 +96,21 @@ db.sp500_stocks.aggregate([
     }
 ])
 ```
+### Primer rezultata upita
+![rezultat_upita](rezultat_upita.png)
+
+### Grafik upita br. 4
+![grafik](grafik.png)
 
 ## Vreme izvršavanja upita br. 4 pre optimizacije
-### Primer rezultata upita:
-![rezultat_upita](rezultat_upita.png)
+
 ![vreme_izvrsavanja_pre_optimizacije](vreme_izvrsavanja_pre_optimizacije.png)
 
 Kao što se može videti najviše vremena odlazi na lookup i na scan. Uvođenje indeksa nad poljem date u kolekciji stocks će rešiti taj problem, dok će uvođenje šablona proširene reference rešiti problem predugog izvršavanja lookup-a. Vrednosti S&P 500 indeksa se se koriste za mnoštvo upita koji se izvršavaju nad kolekcijom stocks, takođe se vrednosti ne menjaju, uz to kolekcija index poseduje svega dva polja, date i S&P500, stoga je logičan izbor da se vrednosti S&P 500 indeksa prebaci u kolekciju stocks. Ovde bi se možda mogao primeniti šablon polimorfizma, tako što bi za svaki dan imali poseban dokument sa grupom vrednosti akcija na taj dan i izračunatim karakterističnim vrednostima. 
 
 Biće poboljšan primarno restruktuiranjem kolekcije stocks.
 
-## Izvršavanje upita br. 4 nakon izmene šeme:
+## Izvršavanje upita br. 4 nakon izmene šeme
 ```
 db.merged_stocks.aggregate([
     {
